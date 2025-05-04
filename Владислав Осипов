@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starlight Survivor</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            color: cyan;
+            font-size: 20px;
+            pointer-events: none;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: cyan;
+            font-family: Arial, sans-serif;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="crosshair">+</div>
+    <div id="ui">Energy: 10 | Wave: 1</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Настройка сцены
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Освещение
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(0, 10, 0);
+        scene.add(pointLight);
+
+        // Игрок
+        camera.position.set(0, 1.5, 0);
+        const player = {
+            speed: 0.15,
+            energy: 10,
+            wave: 1,
+            canShoot: true,
+            shootDelay: 300
+        };
+
+        // Пол (космическая станция)
+        const floorTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/grid.png');
+        const floorGeometry = new THREE.PlaneGeometry(50, 50);
+        const floorMaterial = new THREE.MeshBasicMaterial({ map: floorTexture, color: 0xaaaaaa });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Стены (коридоры станции)
+        const wallGeometry = new THREE.BoxGeometry(50, 5, 0.5);
+        const wallMaterial = new THREE.MeshBasicMaterial({ color: 0x333366 });
+        const walls = [
+            new THREE.Mesh(wallGeometry, wallMaterial), // Север
+            new THREE.Mesh(wallGeometry, wallMaterial), // Юг
+            new THREE.Mesh(wallGeometry, wallMaterial), // Запад
+            new THREE.Mesh(wallGeometry, wallMaterial)  // Восток
+        ];
+        walls[0].position.set(0, 2.5, -25);
+        walls[1].position.set(0, 2.5, 25);
+        walls[2].position.set(-25, 2.5, 0);
+        walls[2].rotation.y = Math.PI / 2;
+        walls[3].position.set(25, 2.5, 0);
+        walls[3].rotation.y = Math.PI / 2;
+        walls.forEach(wall => scene.add(wall));
+
+        // Энергетические ячейки
+        const cells = [];
+        const cellGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+        const cellMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+        function spawnCell() {
+            const cell = new THREE.Mesh(cellGeometry, cellMaterial);
+            cell.position.set(
+                (Math.random() - 0.5) * 40,
+                0.5,
+                (Math.random() - 0.5) * 40
+            );
+            scene.add(cell);
+            cells.push(cell);
+        }
+        for (let i = 0; i < 3; i++) spawnCell();
+
+        // Враги (инопланетные существа)
+        const enemies = [];
+        const enemyGeometry = new THREE.DodecahedronGeometry(1);
+        const enemyMaterial = new THREE.MeshBasicMaterial({ color: 0xff0066 });
+        function spawnEnemy() {
+            const enemy = new THREE.Mesh(enemyGeometry, enemyMaterial);
+            enemy.position.set(
+                (Math.random() - 0.5) * 40,
+                1,
+                (Math.random() - 0.5) * 40
+            );
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+        for (let i = 0; i < 3; i++) spawnEnemy();
+
+        // Управление
+        const keys = {};
+        document.addEventListener('keydown', (e) => keys[e.code] = true);
+        document.addEventListener('keyup', (e) => keys[e.code] = false);
+        document.addEventListener('click', () => {
+            if (player.canShoot && player.energy > 0) {
+                shoot();
+                player.energy--;
+                player.canShoot = false;
+                setTimeout(() => player.canShoot = true, player.shootDelay);
+                updateUI();
+            }
+        });
+
+        // Блокировка указателя мыши
+        document.addEventListener('click', () => {
+            renderer.domElement.requestPointerLock();
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === renderer.domElement) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - e.movementY * 0.002));
+            }
+        });
+
+        // Стрельба
+        const raycaster = new THREE.Raycaster();
+        function shoot() {
+            raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+            const intersects = raycaster.intersectObjects(enemies);
+            if (intersects.length > 0) {
+                const enemy = intersects[0].object;
+                scene.remove(enemy);
+                enemies.splice(enemies.indexOf(enemy), 1);
+            }
+        }
+
+        // Обновление UI
+        function updateUI() {
+            document.getElementById('ui').innerText = `Energy: ${player.energy} | Wave: ${player.wave}`;
+        }
+
+        // Управление волнами
+        let lastWaveTime = Date.now();
+        function manageWaves() {
+            if (enemies.length === 0 && Date.now() - lastWaveTime > 5000) {
+                player.wave++;
+                const enemyCount = 3 + player.wave;
+                for (let i = 0; i < enemyCount; i++) spawnEnemy();
+                lastWaveTime = Date.now();
+                updateUI();
+            }
+        }
+
+        // Обновление
+        function update() {
+            // Движение игрока
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            forward.y = 0;
+            right.y = 0;
+            forward.normalize();
+            right.normalize();
+
+            if (keys['KeyW']) camera.position.add(forward.multiplyScalar(player.speed));
+            if (keys['KeyS']) camera.position.add(forward.multiplyScalar(-player.speed));
+            if (keys['KeyA']) camera.position.add(right.multiplyScalar(-player.speed));
+            if (keys['KeyD']) camera.position.add(right.multiplyScalar(player.speed));
+
+            // Ограничение игрока в пределах станции
+            camera.position.x = Math.max(-24, Math.min(24, camera.position.x));
+            camera.position.z = Math.max(-24, Math.min(24, camera.position.z));
+
+            // Сбор энергетических ячеек
+            cells.forEach((cell, index) => {
+                const distance = camera.position.distanceTo(cell.position);
+                if (distance < 1) {
+                    scene.remove(cell);
+                    cells.splice(index, 1);
+                    player.energy += 5;
+                    spawnCell();
+                    updateUI();
+                }
+            });
+
+            // Движение врагов к игроку
+            enemies.forEach(enemy => {
+                const direction = camera.position.clone().sub(enemy.position).normalize();
+                enemy.position.add(direction.multiplyScalar(0.05));
+                enemy.rotation.y += 0.05;
+            });
+
+            // Проверка столкновений с врагами
+            enemies.forEach((enemy, index) => {
+                const distance = camera.position.distanceTo(enemy.position);
+                if (distance < 1.5) {
+                    alert(`Игра окончена! Вы продержались до волны ${player.wave}`);
+                    window.location.reload();
+                }
+            });
+
+            // Управление волнами
+            manageWaves();
+        }
+
+        // Отрисовка
+        function animate() {
+            requestAnimationFrame(animate);
+            update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Адаптация размера окна
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
